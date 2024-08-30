@@ -4,8 +4,9 @@ FROM ubuntu:20.04
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SLURM_VERSION=23.02.6
+ENV SLURM_CONF=/home/slurm/slurm.conf
 
-# Install dependencies for building SLURM
+# Install dependencies for building SLURM and Python 3.9
 RUN apt-get update && \
     apt-get install -y \
     build-essential \
@@ -25,7 +26,29 @@ RUN apt-get update && \
     libmariadb-dev \
     perl \
     libswitch-perl \
+    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
+
+# Add deadsnakes PPA for Python 3.9
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.9 python3.9-venv python3.9-dev python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.9 as the default python3
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1
+
+# Create the slurm user and its home directory
+RUN useradd -m -d /home/slurm -s /bin/bash slurm && \
+    mkdir -p /home/slurm && \
+    chown slurm:slurm /home/slurm
+
+# Copy the requirements.txt to the container
+COPY requirements.txt /home/slurm/requirements.txt
+
+# Install Python dependencies
+RUN pip3 install --upgrade pip && \
+    pip3 install -r /home/slurm/requirements.txt
 
 # Download and compile SLURM from source
 RUN wget https://download.schedmd.com/slurm/slurm-$SLURM_VERSION.tar.bz2 && \
@@ -35,9 +58,9 @@ RUN wget https://download.schedmd.com/slurm/slurm-$SLURM_VERSION.tar.bz2 && \
     make && make install && \
     cd .. && rm -rf slurm-$SLURM_VERSION slurm-$SLURM_VERSION.tar.bz2
 
-# Create SLURM user and group
-RUN groupadd -g 64030 slurm && \
-    useradd -u 64030 -g slurm -c "SLURM workload manager" -s /bin/bash -d /var/lib/slurm slurm && \
+# Create SLURM user and group if they do not exist
+RUN groupadd -g 64030 slurm || true && \
+    id -u slurm &>/dev/null || useradd -u 64030 -g slurm -c "SLURM workload manager" -s /bin/bash -d /var/lib/slurm slurm && \
     mkdir -p /var/lib/slurm && \
     chown slurm:slurm /var/lib/slurm
 
